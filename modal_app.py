@@ -28,7 +28,7 @@ runs_volume = modal.Volume.from_name("ufld-runs", create_if_missing=True)
 
 @app.function(
     image=image,
-    gpu="A10G", # Default, could use T4 or A100 based on preference
+    gpu="T4", # Default, could use T4 or A100 based on preference
     timeout=86400, # 24 hours
     volumes={
         "/data": dataset_volume,
