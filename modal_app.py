@@ -20,6 +20,7 @@ image = (
         "scipy",
         "wandb",
     )
+    .add_local_dir(".", remote_path="/workspace")
 )
 
 DATASET_DIR = "/data"
@@ -224,7 +225,6 @@ def verify_dataset():
         DATASET_DIR: dataset_vol,
         "/runs": runs_volume
     },
-    mounts=[modal.Mount.from_local_dir(".", remote_path="/workspace")],
     secrets=[modal.Secret.from_name("my-wandb-secret")] # Ensure you create this secret in Modal Dashboard!
 )
 def train():
