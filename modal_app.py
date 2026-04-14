@@ -6,7 +6,7 @@ app = modal.App("ufld-training")
 
 # Define our image with exact dependencies needed by UFLD
 image = (
-    modal.Image.debian_slim(python_version="3.7")
+    modal.Image.debian_slim(python_version="3.10")
     .apt_install("libgl1-mesa-glx", "libglib2.0-0") # OpenCV dependencies
     .pip_install(
         "torch", 
