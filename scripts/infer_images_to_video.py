@@ -321,6 +321,20 @@ def make_comparison_canvas(
     return np.hstack([p1, p2, p3, p4])
 
 
+def collect_image_paths(input_dir, image_glob):
+    primary_pattern = os.path.join(input_dir, image_glob)
+    image_paths = sorted(glob.glob(primary_pattern))
+    if image_paths:
+        return image_paths, primary_pattern
+
+    fallback_globs = ["*.jpg", "*.jpeg", "*.png", "*.JPG", "*.JPEG", "*.PNG"]
+    fallback_paths = []
+    for pattern in fallback_globs:
+        fallback_paths.extend(glob.glob(os.path.join(input_dir, pattern)))
+
+    return sorted(set(fallback_paths)), primary_pattern
+
+
 def main():
     args = parse_args()
     cfg = Config.fromfile(args.config)
@@ -334,10 +348,12 @@ def main():
     cls_num_per_lane, row_anchor = get_protocol_params(dataset_name)
     device = choose_device(args.device)
 
-    image_pattern = os.path.join(args.input_dir, args.image_glob)
-    image_paths = sorted(glob.glob(image_pattern))
+    image_paths, image_pattern = collect_image_paths(args.input_dir, args.image_glob)
     if not image_paths:
-        raise FileNotFoundError(f"No images found with pattern: {image_pattern}")
+        raise FileNotFoundError(
+            "No images found. Checked pattern: "
+            f"{image_pattern}. Also tried: *.jpg, *.jpeg, *.png"
+        )
 
     first = cv2.imread(image_paths[0])
     if first is None:
