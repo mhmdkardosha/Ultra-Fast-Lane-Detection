@@ -1,104 +1,119 @@
-# Modal Deployment and Weights and Biases Logging Walkthrough
+# Modal Deployment and W&B Logging Walkthrough
 
-You are configured for cloud training on Modal with live logging in Weights and Biases (WandB).
+This project is configured for cloud training on Modal with metric visualization in Weights and Biases (W&B).
 
-## What Is In Place Now
+## Current Behavior
 
-1. WandB logging is enabled through TensorBoard scalar forwarding in `utils/dist_utils.py`.
-2. Training runs remotely through `modal_app.py` with dataset and runs volumes mounted.
-3. Modal config uses `configs/tulane_modal.py` paths:
-	- dataset root: `/data/TuLaneConverted`
-	- logs and checkpoints: `/runs/logs_tulane_modal`
-4. Training now includes end-of-epoch validation and end-of-epoch summary output.
-5. Checkpoint strategy now saves all of the following:
-	- `epNNN.pth` every epoch
-	- `latest.pth` every epoch (rolling latest)
-	- `best.pth` whenever monitored validation metric improves
-6. Resume now works from `epNNN.pth`, `latest.pth`, or `best.pth`.
-7. WandB run continuity is supported on resume:
-	- run id is stored in checkpoints as `wandb_run_id`
-	- resumed training reattaches to the same WandB run automatically
+1. Training runs on Modal through `modal_app.py` with these mounted volumes:
+ - dataset volume at `/data`
+ - runs volume at `/runs`
+2. Modal training config is `configs/tulane_modal.py`:
+ - dataset root: `/data/TuLaneConverted`
+ - logs/checkpoints root: `/runs/logs_tulane_modal`
+ - batch metric logging interval: `batch_log_interval = 1` (every batch)
+3. Validation runs at the end of every epoch.
+4. Checkpoints saved during training:
+ - `latest.pth` every epoch
+ - `best.pth` when monitored validation metric improves
+5. W&B logging is epoch-oriented:
+ - only `epoch/*` metrics are sent to W&B
+ - W&B step is set to epoch index (`1, 2, 3, ...`)
+6. TensorBoard still receives all scalar logs (batch and epoch).
 
-## Execution Sequence
+## One-Time Setup
 
-Use these steps to run training cleanly and safely.
-
-### Step 1: Create WandB Secret in Modal
+### 1) Create W&B secret in Modal
 
 ```bash
 modal secret create my-wandb-secret WANDB_API_KEY="YOUR_ACTUAL_WANDB_API_KEY_HERE"
 ```
 
-### Step 2: Upload and Prepare Dataset Volume
+### 2) Upload and prepare dataset volume
 
 ```bash
-# 1. Compress locally (if needed)
+# Optional: compress locally
 tar -czvf TuLane.tar.gz dataset/TuLaneConverted
 
-# 2. Upload archive to dataset volume
+# Upload archive to Modal volume
 modal volume put ufld-dataset TuLane.tar.gz TuLane.tar.gz
 
-# 3. Extract inside Modal volume
+# Extract and prepare
 modal run modal_app.py::extract_dataset
-
-# 4. Ensure list files contain image-mask pairs
 modal run modal_app.py::format_dataset
-
-# 5. Verify dataset structure
 modal run modal_app.py::verify_dataset
 ```
 
-### Step 3: Launch Training
+## Start Training
 
 ```bash
 modal run --detach modal_app.py
 ```
 
-Detached mode returns your terminal immediately while training continues in the cloud.
+Detached mode returns your terminal immediately while training continues remotely.
 
-## New Training Behavior (Important)
+## Monitor Training
 
-Each epoch now does:
+```bash
+# List active/recent apps
+modal app list
 
-1. train pass
-2. validation pass
-3. epoch summary print with train and val loss and metrics
-4. checkpoint writes (`epNNN`, `latest`, and optionally `best`)
+# Stream logs (by app name)
+modal app logs ufld-training -f
+```
 
-Monitored metric priority for best checkpoint is:
+## Per-Epoch Flow
+
+Each epoch performs:
+
+1. Training pass
+2. Validation pass
+3. Epoch summary logging
+4. Checkpoint update (`latest.pth`, and optionally `best.pth`)
+
+Best-checkpoint metric priority:
 
 1. `laneiou`
 2. `iou`
 3. `top1`
-4. fallback to `loss` (minimize)
+4. fallback: `loss` (minimize)
 
 ## Resume Training
 
-You can resume from any saved checkpoint path:
+Set `resume` in `configs/tulane_modal.py` to a checkpoint path under `/runs/logs_tulane_modal/<run_dir>/`, then launch training again.
+
+Example checkpoint choices:
+
+1. `/runs/logs_tulane_modal/<run_dir>/latest.pth`
+2. `/runs/logs_tulane_modal/<run_dir>/best.pth`
+
+W&B run continuity is automatic for checkpoints that contain `wandb_run_id`.
+
+## Evaluate The Trained Model So Far
+
+1. Find your run folder:
 
 ```bash
-python train.py configs/tulane_modal.py --resume /runs/logs_tulane_modal/<run_dir>/latest.pth
+modal volume ls ufld-runs /logs_tulane_modal
 ```
 
-You can also resume from:
-
-1. `/runs/logs_tulane_modal/<run_dir>/best.pth`
-2. `/runs/logs_tulane_modal/<run_dir>/ep012.pth` (example)
-
-### WandB Same-Run Resume
-
-For checkpoints created with the latest code, WandB run resume is automatic because the checkpoint stores `wandb_run_id`.
-
-If you resume from an older checkpoint that does not include `wandb_run_id`, set it manually:
+1. Download a checkpoint locally:
 
 ```bash
-export WANDB_RUN_ID="your_existing_wandb_run_id"
-python train.py configs/tulane_modal.py --resume /path/to/older_checkpoint.pth
+modal volume get ufld-runs /logs_tulane_modal/<run_dir>/latest.pth ./latest_modal.pth
 ```
+
+1. Run evaluation from repository root:
+
+```bash
+python3 test.py configs/tulane_modal.py \
+  --data_root ../dataset/TuLaneConverted \
+  --test_model ./latest_modal.pth \
+  --test_work_dir ./tmp_eval
+```
+
+Use `best.pth` instead of `latest.pth` if you want the best validation checkpoint.
 
 ## Download Logs and Checkpoints
-
-To copy run artifacts from Modal volume to local machine:
 
 ```bash
 modal volume get ufld-runs /logs_tulane_modal ./modal_downloads/
