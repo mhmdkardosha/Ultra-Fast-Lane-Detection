@@ -72,7 +72,7 @@ class LaneClsDataset(torch.utils.data.Dataset):
 
         if self.simu_transform is not None:
             img, label = self.simu_transform(img, label)
-        lane_pts = self._get_index(label)
+        lane_pts, is_binary_mask = self._get_index(label)
         # get the coordinates of lanes at row anchors
 
 
@@ -83,6 +83,9 @@ class LaneClsDataset(torch.utils.data.Dataset):
         if self.use_aux:
             assert self.segment_transform is not None
             seg_label = self.segment_transform(label)
+            if is_binary_mask:
+                # Binary masks (0/255) are converted to background/foreground labels.
+                seg_label = (seg_label > 0).long()
 
         if self.img_transform is not None:
             img = self.img_transform(img)
@@ -109,25 +112,75 @@ class LaneClsDataset(torch.utils.data.Dataset):
                 [int(pt // (col_sample[1] - col_sample[0])) if pt != -1 else num_cols for pt in pti])
         return to_pts.astype(int)
 
+    def _is_binary_lane_mask(self, label_arr):
+        uniq = np.unique(label_arr)
+        return np.all(np.isin(uniq, [0, 255])) or np.all(np.isin(uniq, [0, 1]))
+
+    def _extract_binary_lane_points(self, label_arr, sample_tmp):
+        all_idx = np.zeros((self.num_lanes, len(sample_tmp), 2))
+        h = label_arr.shape[0]
+        for i, r in enumerate(sample_tmp):
+            y = int(round(r))
+            y = min(max(y, 0), h - 1)
+            row_pos = np.where(label_arr[y] > 0)[0]
+
+            for lane_slot in range(self.num_lanes):
+                all_idx[lane_slot, i, 0] = r
+                all_idx[lane_slot, i, 1] = -1
+
+            if len(row_pos) == 0:
+                continue
+
+            split_idx = np.where(np.diff(row_pos) > 1)[0] + 1
+            segments = np.split(row_pos, split_idx)
+            centers = []
+            widths = []
+            for seg in segments:
+                if len(seg) == 0:
+                    continue
+                centers.append(float(np.mean(seg)))
+                widths.append(len(seg))
+
+            if len(centers) > self.num_lanes:
+                keep_idx = np.argsort(widths)[-self.num_lanes:]
+                keep_idx = sorted(keep_idx, key=lambda idx: centers[idx])
+                centers = [centers[idx] for idx in keep_idx]
+            else:
+                centers = sorted(centers)
+
+            for lane_slot, center in enumerate(centers[:self.num_lanes]):
+                all_idx[lane_slot, i, 1] = center
+
+        return all_idx
+
     def _get_index(self, label):
         w, h = label.size
-
         if h != 288:
             scale_f = lambda x : int((x * 1.0/288) * h)
             sample_tmp = list(map(scale_f,self.row_anchor))
+        else:
+            sample_tmp = self.row_anchor
 
-        all_idx = np.zeros((self.num_lanes,len(sample_tmp),2))
-        for i,r in enumerate(sample_tmp):
-            label_r = np.asarray(label)[int(round(r))]
-            for lane_idx in range(1, self.num_lanes + 1):
-                pos = np.where(label_r == lane_idx)[0]
-                if len(pos) == 0:
+        label_arr = np.asarray(label)
+        is_binary_mask = self._is_binary_lane_mask(label_arr)
+
+        if is_binary_mask:
+            all_idx = self._extract_binary_lane_points(label_arr, sample_tmp)
+        else:
+            all_idx = np.zeros((self.num_lanes,len(sample_tmp),2))
+            for i,r in enumerate(sample_tmp):
+                y = int(round(r))
+                y = min(max(y, 0), label_arr.shape[0] - 1)
+                label_r = label_arr[y]
+                for lane_idx in range(1, self.num_lanes + 1):
+                    pos = np.where(label_r == lane_idx)[0]
+                    if len(pos) == 0:
+                        all_idx[lane_idx - 1, i, 0] = r
+                        all_idx[lane_idx - 1, i, 1] = -1
+                        continue
+                    pos = np.mean(pos)
                     all_idx[lane_idx - 1, i, 0] = r
-                    all_idx[lane_idx - 1, i, 1] = -1
-                    continue
-                pos = np.mean(pos)
-                all_idx[lane_idx - 1, i, 0] = r
-                all_idx[lane_idx - 1, i, 1] = pos
+                    all_idx[lane_idx - 1, i, 1] = pos
 
         # data augmentation: extend the lane to the boundary of image
 
@@ -162,4 +215,4 @@ class LaneClsDataset(torch.utils.data.Dataset):
             all_idx_cp[i,pos:,1] = fitted
         if -1 in all_idx[:, :, 0]:
             pdb.set_trace()
-        return all_idx_cp
+        return all_idx_cp, is_binary_mask

@@ -46,7 +46,7 @@ def calc_loss(loss_dict, results, logger, global_step):
         loss_cur = loss_dict['op'][i](*datas)
 
         if global_step % 20 == 0:
-            logger.add_scalar('loss/'+loss_dict['name'][i], loss_cur, global_step)
+            logger.add_scalar('loss/'+loss_dict['name'][i], loss_cur.detach().item(), global_step)
 
         loss += loss_cur * loss_dict['weight'][i]
     return loss
@@ -81,7 +81,7 @@ def train(net, data_loader, loss_dict, optimizer, scheduler,logger, epoch, metri
 
         if hasattr(progress_bar,'set_postfix'):
             kwargs = {me_name: '%.3f' % me_op.get() for me_name, me_op in zip(metric_dict['name'], metric_dict['op'])}
-            progress_bar.set_postfix(loss = '%.3f' % float(loss), 
+            progress_bar.set_postfix(loss = '%.3f' % loss.detach().item(), 
                                     d_time = '%.3f' % float(t_data_1 - t_data_0), 
                                     n_time = '%.3f' % float(t_net_1 - t_net_0), 
                                     **kwargs)

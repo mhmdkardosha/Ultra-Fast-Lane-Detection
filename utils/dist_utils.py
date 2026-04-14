@@ -137,8 +137,18 @@ class DistSummaryWriter(SummaryWriter):
         if can_log():
             super(DistSummaryWriter, self).__init__(*args, **kwargs)
 
+    @staticmethod
+    def _to_scalar(value):
+        if isinstance(value, torch.Tensor):
+            value = value.detach()
+            if value.numel() == 1:
+                return value.item()
+            return value.float().mean().item()
+        return value
+
     def add_scalar(self, name, scalar_value, global_step=None, walltime=None):
         if can_log():
+            scalar_value = self._to_scalar(scalar_value)
             super(DistSummaryWriter, self).add_scalar(name, scalar_value, global_step, walltime)
             try:
                 import wandb

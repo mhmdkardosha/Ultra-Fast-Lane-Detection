@@ -30,7 +30,8 @@ def get_loss_dict(cfg):
     if cfg.use_aux:
         loss_dict = {
             'name': ['cls_loss', 'relation_loss', 'aux_loss', 'relation_dis'],
-            'op': [SoftmaxFocalLoss(2), ParsingRelationLoss(), torch.nn.CrossEntropyLoss(), ParsingRelationDis()],
+            # Many lane-mask datasets mark unlabeled pixels as 255.
+            'op': [SoftmaxFocalLoss(2), ParsingRelationLoss(), torch.nn.CrossEntropyLoss(ignore_index=255), ParsingRelationDis()],
             'weight': [1.0, cfg.sim_loss_w, 1.0, cfg.shp_loss_w],
             'data_src': [('cls_out', 'cls_label'), ('cls_out',), ('seg_out', 'seg_label'), ('cls_out',)]
         }

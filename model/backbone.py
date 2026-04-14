@@ -2,10 +2,23 @@ import torch,pdb
 import torchvision
 import torch.nn.modules
 
+
+def _build_model(builder, weight_enum_name, pretrained):
+    if pretrained:
+        try:
+            weights_enum = getattr(torchvision.models, weight_enum_name)
+            return builder(weights=weights_enum.DEFAULT)
+        except (AttributeError, TypeError):
+            return builder(pretrained=True)
+    try:
+        return builder(weights=None)
+    except TypeError:
+        return builder(pretrained=False)
+
 class vgg16bn(torch.nn.Module):
     def __init__(self,pretrained = False):
         super(vgg16bn,self).__init__()
-        model = list(torchvision.models.vgg16_bn(pretrained=pretrained).features.children())
+        model = list(_build_model(torchvision.models.vgg16_bn, 'VGG16_BN_Weights', pretrained).features.children())
         model = model[:33]+model[34:43]
         self.model = torch.nn.Sequential(*model)
         
@@ -15,23 +28,23 @@ class resnet(torch.nn.Module):
     def __init__(self,layers,pretrained = False):
         super(resnet,self).__init__()
         if layers == '18':
-            model = torchvision.models.resnet18(pretrained=pretrained)
+            model = _build_model(torchvision.models.resnet18, 'ResNet18_Weights', pretrained)
         elif layers == '34':
-            model = torchvision.models.resnet34(pretrained=pretrained)
+            model = _build_model(torchvision.models.resnet34, 'ResNet34_Weights', pretrained)
         elif layers == '50':
-            model = torchvision.models.resnet50(pretrained=pretrained)
+            model = _build_model(torchvision.models.resnet50, 'ResNet50_Weights', pretrained)
         elif layers == '101':
-            model = torchvision.models.resnet101(pretrained=pretrained)
+            model = _build_model(torchvision.models.resnet101, 'ResNet101_Weights', pretrained)
         elif layers == '152':
-            model = torchvision.models.resnet152(pretrained=pretrained)
+            model = _build_model(torchvision.models.resnet152, 'ResNet152_Weights', pretrained)
         elif layers == '50next':
-            model = torchvision.models.resnext50_32x4d(pretrained=pretrained)
+            model = _build_model(torchvision.models.resnext50_32x4d, 'ResNeXt50_32X4D_Weights', pretrained)
         elif layers == '101next':
-            model = torchvision.models.resnext101_32x8d(pretrained=pretrained)
+            model = _build_model(torchvision.models.resnext101_32x8d, 'ResNeXt101_32X8D_Weights', pretrained)
         elif layers == '50wide':
-            model = torchvision.models.wide_resnet50_2(pretrained=pretrained)
+            model = _build_model(torchvision.models.wide_resnet50_2, 'Wide_ResNet50_2_Weights', pretrained)
         elif layers == '101wide':
-            model = torchvision.models.wide_resnet101_2(pretrained=pretrained)
+            model = _build_model(torchvision.models.wide_resnet101_2, 'Wide_ResNet101_2_Weights', pretrained)
         else:
             raise NotImplementedError
         

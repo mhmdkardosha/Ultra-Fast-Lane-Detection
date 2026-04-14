@@ -7,8 +7,11 @@ def converter(data):
         data = data.cpu().data.numpy().flatten()
     return data.flatten()
 def fast_hist(label_pred, label_true,num_classes):
-    #pdb.set_trace()
-    hist = np.bincount(num_classes * label_true.astype(int) + label_pred, minlength=num_classes ** 2)
+    # Ignore labels outside [0, num_classes), e.g. 255 as ignore label.
+    valid = (label_true >= 0) & (label_true < num_classes) & (label_pred >= 0) & (label_pred < num_classes)
+    label_true = label_true[valid].astype(int)
+    label_pred = label_pred[valid].astype(int)
+    hist = np.bincount(num_classes * label_true + label_pred, minlength=num_classes ** 2)
     hist = hist.reshape(num_classes, num_classes)
     return hist
 
@@ -23,24 +26,38 @@ class Metric_mIoU():
 
     def reset(self):
         self.hist = np.zeros((self.class_num,self.class_num))
+
+    def _iou_per_class(self):
+        intersection = np.diag(self.hist)
+        union = np.sum(self.hist, axis=1) + np.sum(self.hist, axis=0) - intersection
+        iou = np.full(self.class_num, np.nan, dtype=np.float64)
+        valid = union > 0
+        iou[valid] = intersection[valid] / union[valid]
+        return iou
+
     def get_miou(self):
-        miou = np.diag(self.hist) / (
-                    np.sum(self.hist, axis=1) + np.sum(self.hist, axis=0) -
-                    np.diag(self.hist))
-        miou = np.nanmean(miou)
-        return miou
+        iou = self._iou_per_class()
+        valid_iou = iou[~np.isnan(iou)]
+        if valid_iou.size == 0:
+            return 0.0
+        return float(np.mean(valid_iou))
 
     def get_lane_iou(self):
-        miou = np.diag(self.hist) / (
-                    np.sum(self.hist, axis=1) + np.sum(self.hist, axis=0) -
-                    np.diag(self.hist))
-        lane_iou = np.nanmean(miou[1:])
-        return lane_iou
+        iou = self._iou_per_class()[1:]
+        valid_iou = iou[~np.isnan(iou)]
+        if valid_iou.size == 0:
+            return 0.0
+        return float(np.mean(valid_iou))
 
     def get_acc(self):
-        acc = np.diag(self.hist) / self.hist.sum(axis=1)
-        acc = np.nanmean(acc)
-        return acc
+        class_total = self.hist.sum(axis=1)
+        acc = np.full(self.class_num, np.nan, dtype=np.float64)
+        valid = class_total > 0
+        acc[valid] = np.diag(self.hist)[valid] / class_total[valid]
+        valid_acc = acc[~np.isnan(acc)]
+        if valid_acc.size == 0:
+            return 0.0
+        return float(np.mean(valid_acc))
         
     def get(self):
         return self.get_miou()
