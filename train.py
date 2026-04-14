@@ -82,8 +82,8 @@ def train(net, data_loader, loss_dict, optimizer, scheduler,logger, epoch, metri
         if hasattr(progress_bar,'set_postfix'):
             kwargs = {me_name: '%.3f' % me_op.get() for me_name, me_op in zip(metric_dict['name'], metric_dict['op'])}
             progress_bar.set_postfix(loss = '%.3f' % float(loss), 
-                                    data_time = '%.3f' % float(t_data_1 - t_data_0), 
-                                    net_time = '%.3f' % float(t_net_1 - t_net_0), 
+                                    d_time = '%.3f' % float(t_data_1 - t_data_0), 
+                                    n_time = '%.3f' % float(t_net_1 - t_net_0), 
                                     **kwargs)
         t_data_0 = time.time()
         

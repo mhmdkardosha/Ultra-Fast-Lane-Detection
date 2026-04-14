@@ -30,12 +30,24 @@ class Metric_mIoU():
         miou = np.nanmean(miou)
         return miou
 
+    def get_lane_iou(self):
+        miou = np.diag(self.hist) / (
+                    np.sum(self.hist, axis=1) + np.sum(self.hist, axis=0) -
+                    np.diag(self.hist))
+        lane_iou = np.nanmean(miou[1:])
+        return lane_iou
+
     def get_acc(self):
         acc = np.diag(self.hist) / self.hist.sum(axis=1)
         acc = np.nanmean(acc)
         return acc
+        
     def get(self):
         return self.get_miou()
+
+class Metric_LaneIoU(Metric_mIoU):
+    def get(self):
+        return self.get_lane_iou()
 class MultiLabelAcc():
     def __init__(self):
         self.cnt = 0

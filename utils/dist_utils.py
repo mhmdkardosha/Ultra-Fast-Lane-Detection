@@ -173,6 +173,7 @@ import tqdm
 
 def dist_tqdm(obj, *args, **kwargs):
     if can_log():
+        kwargs.setdefault('dynamic_ncols', True)
         return tqdm.tqdm(obj, *args, **kwargs)
     else:
         return obj

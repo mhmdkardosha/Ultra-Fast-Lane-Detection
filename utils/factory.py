@@ -1,5 +1,5 @@
 from utils.loss import SoftmaxFocalLoss, ParsingRelationLoss, ParsingRelationDis
-from utils.metrics import MultiLabelAcc, AccTopk, Metric_mIoU
+from utils.metrics import MultiLabelAcc, AccTopk, Metric_mIoU, Metric_LaneIoU
 from utils.dist_utils import DistSummaryWriter
 
 import torch
@@ -48,9 +48,9 @@ def get_metric_dict(cfg):
 
     if cfg.use_aux:
         metric_dict = {
-            'name': ['top1', 'top2', 'top3', 'iou'],
-            'op': [MultiLabelAcc(), AccTopk(cfg.griding_num, 2), AccTopk(cfg.griding_num, 3), Metric_mIoU(cfg.num_lanes+1)],
-            'data_src': [('cls_out', 'cls_label'), ('cls_out', 'cls_label'), ('cls_out', 'cls_label'), ('seg_out', 'seg_label')]
+            'name': ['top1', 'top2', 'top3', 'iou', 'laneiou'],
+            'op': [MultiLabelAcc(), AccTopk(cfg.griding_num, 2), AccTopk(cfg.griding_num, 3), Metric_mIoU(cfg.num_lanes+1), Metric_LaneIoU(cfg.num_lanes+1)],
+            'data_src': [('cls_out', 'cls_label'), ('cls_out', 'cls_label'), ('cls_out', 'cls_label'), ('seg_out', 'seg_label'), ('seg_out', 'seg_label')]
         }
     else:
         metric_dict = {
