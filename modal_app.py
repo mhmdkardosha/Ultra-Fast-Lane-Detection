@@ -174,6 +174,54 @@ def flatten_dataset():
     return True
 
 
+
+@app.function(
+    image=image,
+    volumes={DATASET_DIR: dataset_vol},
+    timeout=300,
+)
+def format_dataset():
+    """Formats the list text files into UFLD pairs.
+    
+    If your TuLaneConverted dataset raw text files only contain image paths,
+    this natively loops over train.txt and val.txt directly in the Volume 
+    and generates the missing lane_masks/ .png mappings.
+    """
+    import os
+    dataset_path = os.path.join(DATASET_DIR, "TuLaneConverted")
+    list_dir = os.path.join(dataset_path, "list")
+    
+    if not os.path.exists(list_dir):
+        print(f"❌ list/ directory not found at {list_dir}")
+        return False
+        
+    for target in ["train.txt", "val.txt", "test.txt"]:
+        file_path = os.path.join(list_dir, target)
+        if not os.path.exists(file_path):
+            continue
+            
+        with open(file_path, "r") as f:
+            lines = [l.strip() for l in f if l.strip()]
+            
+        if not lines:
+            continue
+            
+        # Check if already mapped (contains space separating target and mask)
+        if " " in lines[0]:
+            print(f"   [Skip] {target} already contains space-separated mask pairs.")
+            continue
+            
+        print(f"   [Fixing] Mapping {len(lines)} paths in {target}...")
+        with open(file_path, "w") as f:
+            for line in lines:
+                img_path = line
+                label_path = line.replace('images', 'lane_masks').replace('.jpg', '.png')
+                f.write(f"{img_path} {label_path}\n")
+                
+    dataset_vol.commit()
+    print("✅ Done formatting! The list files are ready for UFLD training.")
+    return True
+
 @app.function(
     image=image,
     volumes={DATASET_DIR: dataset_vol},
