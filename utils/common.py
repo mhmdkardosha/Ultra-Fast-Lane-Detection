@@ -1,8 +1,11 @@
-import os, argparse
-from utils.dist_utils import is_main_process, dist_print, DistSummaryWriter
-from utils.config import Config
-import torch
+import argparse
+import datetime
+import os
 import time
+
+import torch
+from utils.config import Config
+from utils.dist_utils import dist_print, is_main_process
 
 
 def str2bool(v):
@@ -105,7 +108,7 @@ def save_model(net, optimizer, epoch, save_path, distributed):
         torch.save(state, model_path)
 
 
-import pathspec
+import pathspec  # noqa: E402
 
 
 def cp_projects(auto_backup, to_path):
@@ -140,9 +143,6 @@ def cp_projects(auto_backup, to_path):
                 warning_flag = False
 
 
-import datetime, os
-
-
 def get_work_dir(cfg):
     now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     hyper_param_str = "_lr_%1.0e_b_%d" % (cfg.learning_rate, cfg.batch_size)
@@ -151,10 +151,8 @@ def get_work_dir(cfg):
 
 
 def get_logger(work_dir, cfg):
-    logger = DistSummaryWriter(work_dir)
-    config_txt = os.path.join(work_dir, "cfg.txt")
     if is_main_process():
+        os.makedirs(work_dir, exist_ok=True)
+        config_txt = os.path.join(work_dir, "cfg.txt")
         with open(config_txt, "w") as fp:
             fp.write(str(cfg))
-
-    return logger

@@ -1,6 +1,8 @@
+import pickle
+
 import torch
 import torch.distributed as dist
-import pickle
+import tqdm
 
 
 def get_world_size():
@@ -129,63 +131,6 @@ def all_gather(data):
         data_list.append(pickle.loads(buffer))
 
     return data_list
-
-
-from torch.utils.tensorboard import SummaryWriter
-
-
-class DistSummaryWriter(SummaryWriter):
-    def __init__(self, *args, **kwargs):
-        if can_log():
-            super(DistSummaryWriter, self).__init__(*args, **kwargs)
-
-    @staticmethod
-    def _to_scalar(value):
-        if isinstance(value, torch.Tensor):
-            value = value.detach()
-            if value.numel() == 1:
-                return value.item()
-            return value.float().mean().item()
-        return value
-
-    def add_scalar(self, name, scalar_value, global_step=None, walltime=None):
-        if can_log():
-            scalar_value = self._to_scalar(scalar_value)
-            super(DistSummaryWriter, self).add_scalar(
-                name, scalar_value, global_step, walltime
-            )
-            try:
-                import wandb
-
-                if wandb.run is not None:
-                    # Keep W&B charts epoch-oriented by only sending epoch summaries.
-                    if name.startswith("epoch/"):
-                        wandb.log({name: scalar_value}, step=global_step)
-            except ImportError:
-                pass
-
-    def add_figure(self, *args, **kwargs):
-        if can_log():
-            super(DistSummaryWriter, self).add_figure(*args, **kwargs)
-
-    def add_graph(self, *args, **kwargs):
-        if can_log():
-            super(DistSummaryWriter, self).add_graph(*args, **kwargs)
-
-    def add_histogram(self, *args, **kwargs):
-        if can_log():
-            super(DistSummaryWriter, self).add_histogram(*args, **kwargs)
-
-    def add_image(self, *args, **kwargs):
-        if can_log():
-            super(DistSummaryWriter, self).add_image(*args, **kwargs)
-
-    def close(self):
-        if can_log():
-            super(DistSummaryWriter, self).close()
-
-
-import tqdm
 
 
 def dist_tqdm(obj, *args, **kwargs):

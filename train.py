@@ -1,24 +1,15 @@
-import torch, os, datetime
-import numpy as np
+import datetime
+import os
 import re
-
-from model.model import parsingNet
-from data.dataloader import get_train_loader, get_val_loader
-
-from utils.dist_utils import dist_print, dist_tqdm, is_main_process, DistSummaryWriter
-from utils.factory import get_metric_dict, get_loss_dict, get_optimizer, get_scheduler
-from utils.metrics import (
-    MultiLabelAcc,
-    AccTopk,
-    Metric_mIoU,
-    update_metrics,
-    reset_metrics,
-)
-
-from utils.common import merge_config, cp_projects
-from utils.common import get_work_dir, get_logger
-
 import time
+
+import torch
+from data.dataloader import get_train_loader, get_val_loader
+from model.model import parsingNet
+from utils.common import cp_projects, get_logger, get_work_dir, merge_config
+from utils.dist_utils import dist_print, dist_tqdm, is_main_process
+from utils.factory import get_loss_dict, get_metric_dict, get_optimizer, get_scheduler
+from utils.metrics import reset_metrics, update_metrics
 
 
 def inference(net, data_label, use_aux):
@@ -88,26 +79,15 @@ def _select_monitor_metric(val_stats):
     return "loss", float(val_stats["loss"]), "min"
 
 
-def calc_loss(
-    loss_dict, results, logger, global_step, log_prefix="loss", log_interval=20
-):
+def calc_loss(loss_dict, results):
     loss = 0
 
     for i in range(len(loss_dict["name"])):
         data_src = loss_dict["data_src"][i]
-
         datas = [results[src] for src in data_src]
-
         loss_cur = loss_dict["op"][i](*datas)
-
-        if global_step % log_interval == 0:
-            logger.add_scalar(
-                log_prefix + "/" + loss_dict["name"][i],
-                loss_cur.detach().item(),
-                global_step,
-            )
-
         loss += loss_cur * loss_dict["weight"][i]
+
     return loss
 
 
@@ -117,12 +97,9 @@ def train(
     loss_dict,
     optimizer,
     scheduler,
-    logger,
     epoch,
     metric_dict,
     use_aux,
-    step_offset,
-    log_interval,
 ):
     net.train()
     progress_bar = dist_tqdm(data_loader)
@@ -130,25 +107,16 @@ def train(
     loss_sum = 0.0
     metric_sum = {name: 0.0 for name in metric_dict["name"]}
     num_batches = 0
+
     for b_idx, data_label in enumerate(progress_bar):
         t_data_1 = time.time()
         reset_metrics(metric_dict)
-        # Keep scheduler steps based only on training iterations.
         train_step = epoch * len(data_loader) + b_idx
-        # Keep logging steps monotonic across train+val in every epoch.
-        log_step = step_offset + b_idx
 
         t_net_0 = time.time()
         results = inference(net, data_label, use_aux)
 
-        loss = calc_loss(
-            loss_dict,
-            results,
-            logger,
-            log_step,
-            log_prefix="loss",
-            log_interval=log_interval,
-        )
+        loss = calc_loss(loss_dict, results)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -166,15 +134,6 @@ def train(
             metric_sum[me_name] += me_value
         loss_sum += loss.detach().item()
         num_batches += 1
-
-        if log_step % log_interval == 0:
-            for me_name, me_op in zip(metric_dict["name"], metric_dict["op"]):
-                logger.add_scalar(
-                    "metric/" + me_name, me_op.get(), global_step=log_step
-                )
-        logger.add_scalar(
-            "meta/lr", optimizer.param_groups[0]["lr"], global_step=log_step
-        )
 
         if hasattr(progress_bar, "set_postfix"):
             kwargs = {
@@ -200,12 +159,9 @@ def validate(
     net,
     data_loader,
     loss_dict,
-    logger,
     epoch,
     metric_dict,
     use_aux,
-    step_offset,
-    log_interval,
 ):
     net.eval()
     progress_bar = dist_tqdm(data_loader)
@@ -214,19 +170,11 @@ def validate(
     num_batches = 0
 
     with torch.no_grad():
-        for b_idx, data_label in enumerate(progress_bar):
+        for data_label in progress_bar:
             reset_metrics(metric_dict)
-            global_step = step_offset + b_idx
 
             results = inference(net, data_label, use_aux)
-            loss = calc_loss(
-                loss_dict,
-                results,
-                logger,
-                global_step,
-                log_prefix="val_loss",
-                log_interval=log_interval,
-            )
+            loss = calc_loss(loss_dict, results)
 
             results = resolve_val_data(results, use_aux)
             update_metrics(metric_dict, results)
@@ -240,12 +188,6 @@ def validate(
 
             loss_sum += loss.detach().item()
             num_batches += 1
-
-            if global_step % log_interval == 0:
-                for me_name, me_value in current_metrics.items():
-                    logger.add_scalar(
-                        "metric/val_" + me_name, me_value, global_step=global_step
-                    )
 
             if hasattr(progress_bar, "set_postfix"):
                 kwargs = {
@@ -296,7 +238,6 @@ if __name__ == "__main__":
         try:
             import wandb
 
-            # Convert cfg to dict carefully for wandb config
             cfg_dict = {k: v for k, v in cfg.__dict__.items() if not k.startswith("__")}
             if wandb_run_id is not None:
                 wandb.init(
@@ -310,8 +251,13 @@ if __name__ == "__main__":
                 wandb.init(project="UFLD-TuLane", config=cfg_dict)
                 if wandb.run is not None:
                     wandb_run_id = wandb.run.id
+            if wandb.run is not None:
+                wandb.define_metric("epoch")
+                wandb.define_metric("train/*", step_metric="epoch")
+                wandb.define_metric("val/*", step_metric="epoch")
         except ImportError:
             dist_print("wandb not installed, skipping wandb logging")
+
     dist_print(cfg)
     assert cfg.backbone in [
         "18",
@@ -380,7 +326,7 @@ if __name__ == "__main__":
     train_metric_dict = get_metric_dict(cfg)
     val_metric_dict = get_metric_dict(cfg)
     loss_dict = get_loss_dict(cfg)
-    logger = get_logger(work_dir, cfg)
+    get_logger(work_dir, cfg)
     cp_projects(args.auto_backup, work_dir)
 
     best_metric_name = None
@@ -396,54 +342,45 @@ if __name__ == "__main__":
         )
         best_epoch = int(resume_dict.get("best_epoch", resume_epoch - 1))
 
-    train_steps_per_epoch = len(train_loader)
-    val_steps_per_epoch = len(val_loader)
-    log_steps_per_epoch = train_steps_per_epoch + val_steps_per_epoch
-    log_interval = max(1, int(getattr(cfg, "batch_log_interval", 20)))
-
     for epoch in range(resume_epoch, cfg.epoch):
-        train_step_offset = epoch * log_steps_per_epoch
         train_stats = train(
             net,
             train_loader,
             loss_dict,
             optimizer,
             scheduler,
-            logger,
             epoch,
             train_metric_dict,
             cfg.use_aux,
-            step_offset=train_step_offset,
-            log_interval=log_interval,
         )
         val_stats = validate(
             net,
             val_loader,
             loss_dict,
-            logger,
             epoch,
             val_metric_dict,
             cfg.use_aux,
-            step_offset=train_step_offset + train_steps_per_epoch,
-            log_interval=log_interval,
         )
 
         epoch_log_step = epoch + 1
 
-        logger.add_scalar(
-            "epoch/train_loss", train_stats["loss"], global_step=epoch_log_step
-        )
-        logger.add_scalar(
-            "epoch/val_loss", val_stats["loss"], global_step=epoch_log_step
-        )
-        for me_name, me_value in train_stats["metrics"].items():
-            logger.add_scalar(
-                "epoch/train_" + me_name, me_value, global_step=epoch_log_step
-            )
-        for me_name, me_value in val_stats["metrics"].items():
-            logger.add_scalar(
-                "epoch/val_" + me_name, me_value, global_step=epoch_log_step
-            )
+        if is_main_process():
+            try:
+                import wandb
+
+                if wandb.run is not None:
+                    wandb_metrics = {
+                        "epoch": epoch_log_step,
+                        "train/loss": train_stats["loss"],
+                        "val/loss": val_stats["loss"],
+                    }
+                    for me_name, me_value in train_stats["metrics"].items():
+                        wandb_metrics["train/" + me_name] = me_value
+                    for me_name, me_value in val_stats["metrics"].items():
+                        wandb_metrics["val/" + me_name] = me_value
+                    wandb.log(wandb_metrics)
+            except ImportError:
+                pass
 
         monitor_name, monitor_value, monitor_mode = _select_monitor_metric(val_stats)
         is_best = False
@@ -503,4 +440,11 @@ if __name__ == "__main__":
             )
         )
 
-    logger.close()
+    if is_main_process():
+        try:
+            import wandb
+
+            if wandb.run is not None:
+                wandb.finish()
+        except ImportError:
+            pass

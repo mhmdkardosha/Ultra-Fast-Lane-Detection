@@ -1,19 +1,19 @@
-import modal
 import os
 import subprocess
+
+import modal
 
 app = modal.App("ufld-training")
 
 # Define our image with exact dependencies needed by UFLD
 image = (
     modal.Image.debian_slim(python_version="3.10")
-    .apt_install("libgl1-mesa-glx", "libglib2.0-0") # OpenCV dependencies
+    .apt_install("libgl1-mesa-glx", "libglib2.0-0")  # OpenCV dependencies
     .pip_install(
-        "torch", 
+        "torch",
         "torchvision",
         "opencv-python",
         "tqdm",
-        "tensorboard",
         "addict",
         "scikit-learn",
         "pathspec",
@@ -174,7 +174,6 @@ def flatten_dataset():
     return True
 
 
-
 @app.function(
     image=image,
     volumes={DATASET_DIR: dataset_vol},
@@ -182,45 +181,49 @@ def flatten_dataset():
 )
 def format_dataset():
     """Formats the list text files into UFLD pairs.
-    
+
     If your TuLaneConverted dataset raw text files only contain image paths,
-    this natively loops over train.txt and val.txt directly in the Volume 
+    this natively loops over train.txt and val.txt directly in the Volume
     and generates the missing lane_masks/ .png mappings.
     """
     import os
+
     dataset_path = os.path.join(DATASET_DIR, "TuLaneConverted")
     list_dir = os.path.join(dataset_path, "list")
-    
+
     if not os.path.exists(list_dir):
         print(f"❌ list/ directory not found at {list_dir}")
         return False
-        
+
     for target in ["train.txt", "val.txt", "test.txt"]:
         file_path = os.path.join(list_dir, target)
         if not os.path.exists(file_path):
             continue
-            
+
         with open(file_path, "r") as f:
             lines = [l.strip() for l in f if l.strip()]
-            
+
         if not lines:
             continue
-            
+
         # Check if already mapped (contains space separating target and mask)
         if " " in lines[0]:
             print(f"   [Skip] {target} already contains space-separated mask pairs.")
             continue
-            
+
         print(f"   [Fixing] Mapping {len(lines)} paths in {target}...")
         with open(file_path, "w") as f:
             for line in lines:
                 img_path = line
-                label_path = line.replace('images', 'lane_masks').replace('.jpg', '.png')
+                label_path = line.replace("images", "lane_masks").replace(
+                    ".jpg", ".png"
+                )
                 f.write(f"{img_path} {label_path}\n")
-                
+
     dataset_vol.commit()
     print("✅ Done formatting! The list files are ready for UFLD training.")
     return True
+
 
 @app.function(
     image=image,
@@ -240,9 +243,7 @@ def verify_dataset():
         print("❌ Dataset not found at /data/TuLaneConverted")
         print()
         print("Upload & extract it:")
-        print(
-            "  modal volume put ufld-dataset ./dataset/TuLane.tar.gz TuLane.tar.gz"
-        )
+        print("  modal volume put ufld-dataset ./dataset/TuLane.tar.gz TuLane.tar.gz")
         print("  modal run modal_app.py::extract_dataset")
         return False
 
@@ -265,41 +266,48 @@ def verify_dataset():
 
     return True
 
+
 @app.function(
     image=image,
-    gpu="T4", # Default, could use T4 or A100 based on preference
-    timeout=86400, # 24 hours
-    volumes={
-        DATASET_DIR: dataset_vol,
-        "/runs": runs_volume
-    },
-    secrets=[modal.Secret.from_name("my-wandb-secret")] # Ensure you create this secret in Modal Dashboard!
+    gpu="T4",  # Default, could use T4 or A100 based on preference
+    timeout=86400,  # 24 hours
+    volumes={DATASET_DIR: dataset_vol, "/runs": runs_volume},
+    secrets=[
+        modal.Secret.from_name("my-wandb-secret")
+    ],  # Ensure you create this secret in Modal Dashboard!
 )
 def train():
     os.chdir("/workspace")
-    
+
     print("Starting UFLD Framework on Modal with W&B Logging...")
 
     # Exclusively call the identical train execution with the Modal specific config
     cmd = ["python3", "train.py", "configs/tulane_modal.py"]
-    
+
     # We yield the log output immediately using Popen
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    
+    process = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+    )
+
     # Continuously print output from the subprocess so we can monitor on Modal dashboard
     for line in iter(process.stdout.readline, ""):
         print(line, end="")
-        
+
     process.stdout.close()
     return_code = process.wait()
-    
+
     if return_code != 0:
         raise RuntimeError(f"Training failed with return code {return_code}")
     print("Training Completed Successfully!")
+
 
 @app.local_entrypoint()
 def main():
     print("Deploying UFLD to Modal Cloud Network in DETACHED MODE...")
     train.spawn()
-    print("Training job spawned successfully! It is now running in the background on Modal.")
-    print("You can close this terminal. Monitor progress on your WandB dashboard or the Modal web interface.")
+    print(
+        "Training job spawned successfully! It is now running in the background on Modal."
+    )
+    print(
+        "You can close this terminal. Monitor progress on your WandB dashboard or the Modal web interface."
+    )
