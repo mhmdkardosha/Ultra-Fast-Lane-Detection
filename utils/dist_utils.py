@@ -12,7 +12,7 @@ def get_world_size():
 
 
 def to_python_float(t):
-    if hasattr(t, 'item'):
+    if hasattr(t, "item"):
         return t.item()
     else:
         return t[0]
@@ -53,6 +53,7 @@ def synchronize():
         return
     dist.barrier()
 
+
 def dist_cat_reduce_tensor(tensor):
     if not dist.is_available():
         return tensor
@@ -61,12 +62,13 @@ def dist_cat_reduce_tensor(tensor):
     # dist_print(tensor)
     rt = tensor.clone()
     all_list = [torch.zeros_like(tensor) for _ in range(get_world_size())]
-    dist.all_gather(all_list,rt)
+    dist.all_gather(all_list, rt)
     # dist_print(all_list[0][1],all_list[1][1],all_list[2][1],all_list[3][1])
     # dist_print(all_list[0][2],all_list[1][2],all_list[2][2],all_list[3][2])
     # dist_print(all_list[0][3],all_list[1][3],all_list[2][3],all_list[3][3])
     # dist_print(all_list[0].shape)
-    return torch.cat(all_list,dim = 0)
+    return torch.cat(all_list, dim=0)
+
 
 def dist_sum_reduce_tensor(tensor):
     if not dist.is_available():
@@ -149,11 +151,16 @@ class DistSummaryWriter(SummaryWriter):
     def add_scalar(self, name, scalar_value, global_step=None, walltime=None):
         if can_log():
             scalar_value = self._to_scalar(scalar_value)
-            super(DistSummaryWriter, self).add_scalar(name, scalar_value, global_step, walltime)
+            super(DistSummaryWriter, self).add_scalar(
+                name, scalar_value, global_step, walltime
+            )
             try:
                 import wandb
+
                 if wandb.run is not None:
-                    wandb.log({name: scalar_value}, step=global_step)
+                    # Keep W&B charts epoch-oriented by only sending epoch summaries.
+                    if name.startswith("epoch/"):
+                        wandb.log({name: scalar_value}, step=global_step)
             except ImportError:
                 pass
 
@@ -168,7 +175,7 @@ class DistSummaryWriter(SummaryWriter):
     def add_histogram(self, *args, **kwargs):
         if can_log():
             super(DistSummaryWriter, self).add_histogram(*args, **kwargs)
-    
+
     def add_image(self, *args, **kwargs):
         if can_log():
             super(DistSummaryWriter, self).add_image(*args, **kwargs)
@@ -183,8 +190,7 @@ import tqdm
 
 def dist_tqdm(obj, *args, **kwargs):
     if can_log():
-        kwargs.setdefault('dynamic_ncols', True)
+        kwargs.setdefault("dynamic_ncols", True)
         return tqdm.tqdm(obj, *args, **kwargs)
     else:
         return obj
-
