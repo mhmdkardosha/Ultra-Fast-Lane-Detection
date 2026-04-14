@@ -61,6 +61,8 @@ def train():
 
 @app.local_entrypoint()
 def main():
-    print("Deploying UFLD to Modal Cloud Network...")
-    train.remote()
+    print("Deploying UFLD to Modal Cloud Network in DETACHED MODE...")
+    train.spawn()
+    print("Training job spawned successfully! It is now running in the background on Modal.")
+    print("You can close this terminal. Monitor progress on your WandB dashboard or the Modal web interface.")
 
