@@ -3,7 +3,7 @@ dataset='CULane'
 data_root = '/data' # The Modal Volume will mount TuLaneConverted root correctly here!
 
 # TRAIN
-epoch = 50
+epoch = 20
 batch_size = 32
 optimizer = 'SGD'
 learning_rate = 0.1
