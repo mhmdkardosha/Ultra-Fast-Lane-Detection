@@ -3,7 +3,7 @@ dataset = "CULane"
 data_root = "/data/TuLaneConverted"
 
 # TRAIN
-epoch = 20
+epoch = 50
 batch_size = 32
 optimizer = "SGD"
 learning_rate = 0.1
@@ -33,7 +33,7 @@ log_path = "/runs/logs_tulane_modal"  # Remote logs volume
 
 # FINETUNE or RESUME MODEL PATH
 finetune = None
-resume = None
+resume = "/ufld-runs/logs_tulane_modal/20260414_093306_lr_1e-01_b_32_tulane_modal/latest.pth"
 
 # TEST
 test_model = None
