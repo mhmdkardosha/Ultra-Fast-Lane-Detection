@@ -27,7 +27,7 @@ shp_loss_w = 0.0
 
 # EXP
 note = "_tulane_modal"
-batch_log_interval = 1
+batch_log_interval = 50
 
 log_path = "/runs/logs_tulane_modal"  # Remote logs volume
 
