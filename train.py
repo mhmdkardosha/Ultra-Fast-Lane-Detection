@@ -71,6 +71,37 @@ def _infer_resume_epoch(resume_path, resume_dict):
     return 0
 
 
+def _resolve_resume_path(resume_path, log_path=None):
+    candidates = []
+
+    def _push(path):
+        if path is not None and path not in candidates:
+            candidates.append(path)
+
+    expanded = os.path.expanduser(resume_path)
+    _push(resume_path)
+    _push(expanded)
+
+    if expanded.startswith("/ufld-runs/"):
+        _push("/runs/" + expanded[len("/ufld-runs/") :])
+    if expanded.startswith("/runs/"):
+        _push("/ufld-runs/" + expanded[len("/runs/") :])
+
+    if log_path is not None and not os.path.isabs(expanded):
+        _push(os.path.join(log_path, expanded))
+
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate, candidates
+
+    raise FileNotFoundError(
+        "Could not find resume checkpoint. "
+        "Tried: %s. "
+        "Set cfg.resume to an existing checkpoint path, typically under %s"
+        % (", ".join(candidates), log_path if log_path is not None else "cfg.log_path")
+    )
+
+
 def _select_monitor_metric(val_stats):
     metrics = val_stats.get("metrics", {})
     for metric_name in ["laneiou", "iou", "top1"]:
@@ -224,8 +255,14 @@ if __name__ == "__main__":
     resume_dict = None
 
     if cfg.resume is not None:
-        dist_print("==> Resume model from " + cfg.resume)
-        resume_dict = torch.load(cfg.resume, map_location="cpu")
+        resume_path, _ = _resolve_resume_path(
+            cfg.resume, getattr(cfg, "log_path", None)
+        )
+        if resume_path != cfg.resume:
+            dist_print("Mapped resume path:", cfg.resume, "->", resume_path)
+        dist_print("==> Resume model from " + resume_path)
+        resume_dict = torch.load(resume_path, map_location="cpu")
+        cfg.resume = resume_path
         wandb_run_id = resume_dict.get("wandb_run_id")
 
     if wandb_run_id is None:

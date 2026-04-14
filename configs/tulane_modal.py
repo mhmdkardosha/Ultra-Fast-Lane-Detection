@@ -33,7 +33,7 @@ log_path = "/runs/logs_tulane_modal"  # Remote logs volume
 
 # FINETUNE or RESUME MODEL PATH
 finetune = None
-resume = "/ufld-runs/logs_tulane_modal/20260414_093306_lr_1e-01_b_32_tulane_modal/latest.pth"
+resume = "/runs/logs_tulane_modal/20260414_093306_lr_1e-01_b_32_tulane_modal/latest.pth"
 
 # TEST
 test_model = None
