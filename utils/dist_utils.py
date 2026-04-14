@@ -137,9 +137,15 @@ class DistSummaryWriter(SummaryWriter):
         if can_log():
             super(DistSummaryWriter, self).__init__(*args, **kwargs)
 
-    def add_scalar(self, *args, **kwargs):
+    def add_scalar(self, name, scalar_value, global_step=None, walltime=None):
         if can_log():
-            super(DistSummaryWriter, self).add_scalar(*args, **kwargs)
+            super(DistSummaryWriter, self).add_scalar(name, scalar_value, global_step, walltime)
+            try:
+                import wandb
+                if wandb.run is not None:
+                    wandb.log({name: scalar_value}, step=global_step)
+            except ImportError:
+                pass
 
     def add_figure(self, *args, **kwargs):
         if can_log():

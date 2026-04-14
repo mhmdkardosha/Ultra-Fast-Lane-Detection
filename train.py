@@ -107,6 +107,14 @@ if __name__ == "__main__":
         torch.cuda.set_device(args.local_rank)
         torch.distributed.init_process_group(backend='nccl', init_method='env://')
     dist_print(datetime.datetime.now().strftime('[%Y/%m/%d %H:%M:%S]') + ' start training...')
+    if is_main_process():
+        try:
+            import wandb
+            # Convert cfg to dict carefully for wandb config
+            cfg_dict = {k: v for k, v in cfg.__dict__.items() if not k.startswith('__')}
+            wandb.init(project="UFLD-TuLane", config=cfg_dict)
+        except ImportError:
+            dist_print("wandb not installed, skipping wandb logging")
     dist_print(cfg)
     assert cfg.backbone in ['18','34','50','101','152','50next','101next','50wide','101wide']
 
