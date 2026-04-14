@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 import torch
 import torchvision.transforms as transforms
+from tqdm import tqdm
 
 # Make local project imports work regardless of where the script is launched from.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -365,7 +366,7 @@ def main():
 
     try:
         with torch.no_grad():
-            for image_path in image_paths:
+            for image_path in tqdm(image_paths, desc="Inference", unit="img"):
                 frame = cv2.imread(image_path)
                 if frame is None:
                     print(f"Warning: skipping unreadable image: {image_path}")
