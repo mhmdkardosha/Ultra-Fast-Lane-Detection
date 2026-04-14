@@ -56,6 +56,63 @@ def get_train_loader(batch_size, data_root, griding_num, dataset, use_aux, distr
 
     return train_loader, cls_num_per_lane
 
+
+def get_val_loader(batch_size, data_root, griding_num, dataset, use_aux, distributed, num_lanes):
+    target_transform = transforms.Compose([
+        mytransforms.FreeScaleMask((288, 800)),
+        mytransforms.MaskToTensor(),
+    ])
+    segment_transform = transforms.Compose([
+        mytransforms.FreeScaleMask((36, 100)),
+        mytransforms.MaskToTensor(),
+    ])
+    img_transform = transforms.Compose([
+        transforms.Resize((288, 800)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    ])
+
+    if dataset == 'CULane':
+        val_list = os.path.join(data_root, 'list/val.txt')
+        val_dataset = LaneClsDataset(
+            data_root,
+            val_list,
+            img_transform=img_transform,
+            target_transform=target_transform,
+            simu_transform=None,
+            segment_transform=segment_transform,
+            row_anchor=culane_row_anchor,
+            griding_num=griding_num,
+            use_aux=use_aux,
+            num_lanes=num_lanes,
+        )
+    elif dataset == 'Tusimple':
+        val_list = os.path.join(data_root, 'val.txt')
+        if not os.path.exists(val_list):
+            val_list = os.path.join(data_root, 'test.txt')
+        val_dataset = LaneClsDataset(
+            data_root,
+            val_list,
+            img_transform=img_transform,
+            target_transform=target_transform,
+            simu_transform=None,
+            segment_transform=segment_transform,
+            row_anchor=tusimple_row_anchor,
+            griding_num=griding_num,
+            use_aux=use_aux,
+            num_lanes=num_lanes,
+        )
+    else:
+        raise NotImplementedError
+
+    if distributed:
+        sampler = torch.utils.data.distributed.DistributedSampler(val_dataset, shuffle=False)
+    else:
+        sampler = torch.utils.data.SequentialSampler(val_dataset)
+
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, sampler=sampler, num_workers=4)
+    return val_loader
+
 def get_test_loader(batch_size, data_root,dataset, distributed):
     img_transforms = transforms.Compose([
         transforms.Resize((288, 800)),
