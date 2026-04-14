@@ -1,96 +1,69 @@
-
 # Install
-1. Clone the project
 
-    ```Shell
-    git clone https://github.com/cfzd/Ultra-Fast-Lane-Detection
-    cd Ultra-Fast-Lane-Detection
-    ```
+## 1) Clone
 
-2. Create a conda virtual environment and activate it
+```bash
+git clone https://github.com/cfzd/Ultra-Fast-Lane-Detection
+cd Ultra-Fast-Lane-Detection
+```
 
-    ```Shell
-    conda create -n lane-det python=3.7 -y
-    conda activate lane-det
-    ```
+## 2) Create environment
 
-3. Install dependencies
+```bash
+conda create -n lane-det python=3.10 -y
+conda activate lane-det
+```
 
-    ```Shell
-    # If you dont have pytorch
-    conda install pytorch torchvision cudatoolkit=10.1 -c pytorch 
+## 3) Install dependencies
 
-    pip install -r requirements.txt
-    ```
+```bash
+pip install -r requirements.txt
+```
 
-4. Data preparation
+## 4) Prepare your data
 
-    Download [CULane](https://xingangpan.github.io/projects/CULane.html) and [Tusimple](https://github.com/TuSimple/tusimple-benchmark/issues/3). Then extract them to `$CULANEROOT` and `$TUSIMPLEROOT`. The directory arrangement of Tusimple should look like:
-    ```
-    $TUSIMPLEROOT
-    |──clips
-    |──label_data_0313.json
-    |──label_data_0531.json
-    |──label_data_0601.json
-    |──test_tasks_0627.json
-    |──test_label.json
-    |──readme.md
-    ```
-    The directory arrangement of CULane should look like:
-    ```
-    $CULANEROOT
-    |──driver_100_30frame
-    |──driver_161_90frame
-    |──driver_182_30frame
-    |──driver_193_90frame
-    |──driver_23_30frame
-    |──driver_37_30frame
-    |──laneseg_label_w16
-    |──list
-    ```
-    
-    For Tusimple, the segmentation annotation is not provided, hence we need to generate segmentation from the json annotation. 
+Use your converted TuLane dataset in this structure:
 
-    ```Shell
-    python scripts/convert_tusimple.py --root $TUSIMPLEROOT
-    # this will generate segmentations and two list files: train_gt.txt and test.txt
-    ```
+- `../dataset/TuLaneConverted/images/<split>`
+- `../dataset/TuLaneConverted/lane_masks/<split>`
 
-5. Install CULane evaluation tools (Only required for testing). 
+Example split names: `target_test`, `target_train`, `target_val`, `train`, `val`.
 
-    If you just want to train a model or make a demo, this tool is not necessary and you can skip this step. If you want to get the evaluation results on CULane, you should install this tool.
+## 5) Python-only testing (no C++ build)
 
-    This tools requires OpenCV C++. Please follow [here](https://docs.opencv.org/master/d7/d9f/tutorial_linux_install.html) to install OpenCV C++. ***When you build OpenCV, remove the paths of anaconda from PATH or it will be failed.***
-    ```Shell
-    # First you need to install OpenCV C++. 
-    # After installation, make a soft link of OpenCV include path.
+### Comparison screenshot output
 
-    ln -s /usr/local/include/opencv4/opencv2 /usr/local/include/opencv2
-    ```
-    We provide three kinds of complie pipelines to build the evaluation tool of CULane.
+```bash
+python scripts/infer_images_to_video.py configs/tulane.py \
+  --model path_to_your_model.pth \
+  --input_dir ../dataset/TuLaneConverted/images/target_test \
+  --gt_mask_dir ../dataset/TuLaneConverted/lane_masks/target_test \
+  --render_style comparison \
+  --output_mode images \
+  --output_dir outputs/target_test_comparison \
+  --device cpu \
+  --dataset CULane
+```
 
-    Option 1:
+## 6) Optional: Modal cloud training and W&B
 
-    ```Shell
-    cd evaluation/culane
-    make
-    ```
+If you are training on Modal, use the cloud workflow in [Walkthrough.md](./Walkthrough.md).
 
-    Option 2:
-    ```Shell
-    cd evaluation/culane
-    mkdir build && cd build
-    cmake ..
-    make
-    mv culane_evaluator ../evaluate
-    ```
+Quick start:
 
-    For Windows user:
-    ```Shell
-    mkdir build-vs2017
-    cd build-vs2017
-    cmake .. -G "Visual Studio 15 2017 Win64"
-    cmake --build . --config Release  
-    # or, open the "xxx.sln" file by Visual Studio and click build button
-    move culane_evaluator ../evaluate
-    ```
+```bash
+modal run --detach modal_app.py
+```
+
+### Overlay-only output
+
+```bash
+python scripts/infer_images_to_video.py configs/tulane.py \
+  --model path_to_your_model.pth \
+  --input_dir ../dataset/TuLaneConverted/images/target_test \
+  --render_style overlay \
+  --output_mode images \
+  --output_dir outputs/target_test_overlay \
+  --device cpu \
+  --dataset CULane
+```

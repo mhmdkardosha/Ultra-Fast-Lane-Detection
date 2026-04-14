@@ -1,26 +1,24 @@
 # Modal Deployment and W&B Logging Walkthrough
 
-This project is configured for cloud training on Modal with metric visualization in Weights and Biases (W&B).
+This project supports cloud training on Modal with metric visualization in Weights and Biases (W&B), and also supports local Python-only image testing.
 
-## Current Behavior
+## Modal: Current behavior
 
-1. Training runs on Modal through `modal_app.py` with these mounted volumes:
- - dataset volume at `/data`
- - runs volume at `/runs`
-2. Modal training config is `configs/tulane_modal.py`:
- - dataset root: `/data/TuLaneConverted`
- - logs/checkpoints root: `/runs/logs_tulane_modal`
- - batch metric logging interval: `batch_log_interval = 1` (every batch)
-3. Validation runs at the end of every epoch.
-4. Checkpoints saved during training:
- - `latest.pth` every epoch
- - `best.pth` when monitored validation metric improves
-5. W&B logging is epoch-oriented:
- - only `epoch/*` metrics are sent to W&B
- - W&B step is set to epoch index (`1, 2, 3, ...`)
-6. TensorBoard still receives all scalar logs (batch and epoch).
+- Training runs on Modal through `modal_app.py` with mounted volumes at `/data` and `/runs`.
+- Modal training config is `configs/tulane_modal.py`:
+  - dataset root: `/data/TuLaneConverted`
+  - logs/checkpoints root: `/runs/logs_tulane_modal`
+  - batch metric logging interval: `batch_log_interval = 1` (every batch)
+- Validation runs at the end of every epoch.
+- Checkpoints saved during training:
+  - `latest.pth` every epoch
+  - `best.pth` when monitored validation metric improves
+- W&B logging is epoch-oriented:
+  - only `epoch/*` metrics are sent to W&B
+  - W&B step is set to epoch index (`1, 2, 3, ...`)
+- TensorBoard still receives all scalar logs (batch and epoch).
 
-## One-Time Setup
+## Modal: One-time setup
 
 ### 1) Create W&B secret in Modal
 
@@ -43,7 +41,7 @@ modal run modal_app.py::format_dataset
 modal run modal_app.py::verify_dataset
 ```
 
-## Start Training
+## Modal: Start training
 
 ```bash
 modal run --detach modal_app.py
@@ -51,7 +49,7 @@ modal run --detach modal_app.py
 
 Detached mode returns your terminal immediately while training continues remotely.
 
-## Monitor Training
+## Modal: Monitor training
 
 ```bash
 # List active/recent apps
@@ -61,23 +59,7 @@ modal app list
 modal app logs ufld-training -f
 ```
 
-## Per-Epoch Flow
-
-Each epoch performs:
-
-1. Training pass
-2. Validation pass
-3. Epoch summary logging
-4. Checkpoint update (`latest.pth`, and optionally `best.pth`)
-
-Best-checkpoint metric priority:
-
-1. `laneiou`
-2. `iou`
-3. `top1`
-4. fallback: `loss` (minimize)
-
-## Resume Training
+## Modal: Resume training
 
 Set `resume` in `configs/tulane_modal.py` to a checkpoint path under `/runs/logs_tulane_modal/<run_dir>/`, then launch training again.
 
@@ -88,7 +70,7 @@ Example checkpoint choices:
 
 W&B run continuity is automatic for checkpoints that contain `wandb_run_id`.
 
-## Evaluate The Trained Model So Far
+## Modal: Evaluate the trained model so far
 
 1. Find your run folder:
 
@@ -113,8 +95,37 @@ python3 test.py configs/tulane_modal.py \
 
 Use `best.pth` instead of `latest.pth` if you want the best validation checkpoint.
 
-## Download Logs and Checkpoints
+## Modal: Download logs and checkpoints
 
 ```bash
 modal volume get ufld-runs /logs_tulane_modal ./modal_downloads/
+```
+
+## Local Python testing examples
+
+### Comparison screenshot testing
+
+```bash
+python scripts/infer_images_to_video.py configs/tulane.py \
+  --model path_to_your_model.pth \
+  --input_dir ../dataset/TuLaneConverted/images/target_test \
+  --gt_mask_dir ../dataset/TuLaneConverted/lane_masks/target_test \
+  --render_style comparison \
+  --output_mode images \
+  --output_dir outputs/target_test_comparison \
+  --device cpu \
+  --dataset CULane
+```
+
+### Overlay-only testing
+
+```bash
+python scripts/infer_images_to_video.py configs/tulane.py \
+  --model path_to_your_model.pth \
+  --input_dir ../dataset/TuLaneConverted/images/target_test \
+  --render_style overlay \
+  --output_mode images \
+  --output_dir outputs/target_test_overlay \
+  --device cpu \
+  --dataset CULane
 ```
