@@ -1,6 +1,6 @@
 # DATA
 dataset='CULane'
-data_root = '/data' # The Modal Volume will mount TuLaneConverted root correctly here!
+data_root = '/data/TuLaneConverted' 
 
 # TRAIN
 epoch = 20
