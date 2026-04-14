@@ -129,6 +129,48 @@ def get_protocol_params(dataset_name):
     raise ValueError("dataset must be one of: CULane, Tusimple")
 
 
+def print_model_info(cfg, ckpt, net, num_lanes, device):
+    """Print a human-readable summary of the loaded model and checkpoint metadata."""
+    sep = "=" * 56
+    print(sep)
+    print("  Model loaded")
+    print(sep)
+    print(f"  Checkpoint  : {cfg.test_model}")
+    print(f"  Backbone    : ResNet-{cfg.backbone}")
+    print(f"  Griding num : {cfg.griding_num}")
+    print(f"  Num lanes   : {num_lanes}")
+    print(f"  Device      : {device}")
+
+    total_params = sum(p.numel() for p in net.parameters())
+    trainable_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
+    print(f"  Parameters  : {total_params:,}  ({trainable_params:,} trainable)")
+
+    if isinstance(ckpt, dict):
+        epoch = ckpt.get("epoch")
+        if epoch is not None:
+            print(f"  Saved epoch : {int(epoch) + 1}")
+
+        best_name = ckpt.get("best_metric_name")
+        best_value = ckpt.get("best_metric_value")
+        best_epoch = ckpt.get("best_epoch")
+        mon_name = ckpt.get("monitor_name")
+        mon_value = ckpt.get("monitor_value")
+
+        if best_name is not None and best_value is not None:
+            epoch_str = (
+                f"  (epoch {int(best_epoch) + 1})" if best_epoch is not None else ""
+            )
+            print(f"  Best score  : {best_name} = {float(best_value):.4f}{epoch_str}")
+        elif mon_name is not None and mon_value is not None:
+            print(f"  Score       : {mon_name} = {float(mon_value):.4f}")
+
+        wandb_run_id = ckpt.get("wandb_run_id")
+        if wandb_run_id:
+            print(f"  W&B run     : {wandb_run_id}")
+
+    print(sep)
+
+
 def build_model(cfg, cls_num_per_lane, device, num_lanes):
     net = parsingNet(
         pretrained=False,
@@ -149,6 +191,8 @@ def build_model(cfg, cls_num_per_lane, device, num_lanes):
 
     net.load_state_dict(compatible_state_dict, strict=False)
     net.eval()
+
+    print_model_info(cfg, ckpt, net, num_lanes, device)
     return net
 
 
