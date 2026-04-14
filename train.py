@@ -1,5 +1,6 @@
 import torch, os, datetime
 import numpy as np
+import re
 
 from model.model import parsingNet
 from data.dataloader import get_train_loader, get_val_loader
@@ -8,7 +9,7 @@ from utils.dist_utils import dist_print, dist_tqdm, is_main_process, DistSummary
 from utils.factory import get_metric_dict, get_loss_dict, get_optimizer, get_scheduler
 from utils.metrics import MultiLabelAcc, AccTopk, Metric_mIoU, update_metrics, reset_metrics
 
-from utils.common import merge_config, save_model, cp_projects
+from utils.common import merge_config, cp_projects
 from utils.common import get_work_dir, get_logger
 
 import time
@@ -46,6 +47,18 @@ def _save_checkpoint(path, net, optimizer, epoch, extra=None):
     if extra is not None:
         state.update(extra)
     torch.save(state, path)
+
+
+def _infer_resume_epoch(resume_path, resume_dict):
+    if 'epoch' in resume_dict:
+        return int(resume_dict['epoch']) + 1
+
+    file_name = os.path.basename(resume_path)
+    matched = re.search(r'ep(\d+)', file_name)
+    if matched is not None:
+        return int(matched.group(1)) + 1
+
+    return 0
 
 
 def _select_monitor_metric(val_stats):
@@ -183,13 +196,31 @@ if __name__ == "__main__":
     if distributed:
         torch.cuda.set_device(args.local_rank)
         torch.distributed.init_process_group(backend='nccl', init_method='env://')
+
+    wandb_run_id = None
+    resume_dict = None
+
+    if cfg.resume is not None:
+        dist_print('==> Resume model from ' + cfg.resume)
+        resume_dict = torch.load(cfg.resume, map_location='cpu')
+        wandb_run_id = resume_dict.get('wandb_run_id')
+
+    if wandb_run_id is None:
+        wandb_run_id = os.environ.get('WANDB_RUN_ID')
+
     dist_print(datetime.datetime.now().strftime('[%Y/%m/%d %H:%M:%S]') + ' start training...')
     if is_main_process():
         try:
             import wandb
             # Convert cfg to dict carefully for wandb config
             cfg_dict = {k: v for k, v in cfg.__dict__.items() if not k.startswith('__')}
-            wandb.init(project="UFLD-TuLane", config=cfg_dict)
+            if wandb_run_id is not None:
+                wandb.init(project="UFLD-TuLane", config=cfg_dict, id=wandb_run_id, resume='must')
+                dist_print('Resumed wandb run id:', wandb_run_id)
+            else:
+                wandb.init(project="UFLD-TuLane", config=cfg_dict)
+                if wandb.run is not None:
+                    wandb_run_id = wandb.run.id
         except ImportError:
             dist_print("wandb not installed, skipping wandb logging")
     dist_print(cfg)
@@ -213,13 +244,13 @@ if __name__ == "__main__":
             if 'model' in k:
                 state_clip[k] = v
         net.load_state_dict(state_clip, strict=False)
-    if cfg.resume is not None:
-        dist_print('==> Resume model from ' + cfg.resume)
-        resume_dict = torch.load(cfg.resume, map_location='cpu')
+
+    if resume_dict is not None:
         net.load_state_dict(resume_dict['model'])
         if 'optimizer' in resume_dict.keys():
             optimizer.load_state_dict(resume_dict['optimizer'])
-        resume_epoch = int(os.path.split(cfg.resume)[1][2:5]) + 1
+        resume_epoch = _infer_resume_epoch(cfg.resume, resume_dict)
+        dist_print('Resume epoch start:', resume_epoch)
     else:
         resume_epoch = 0
 
@@ -236,6 +267,11 @@ if __name__ == "__main__":
     best_metric_name = None
     best_metric_value = None
     best_epoch = -1
+
+    if resume_dict is not None:
+        best_metric_name = resume_dict.get('best_metric_name', resume_dict.get('monitor_name'))
+        best_metric_value = resume_dict.get('best_metric_value', resume_dict.get('monitor_value'))
+        best_epoch = int(resume_dict.get('best_epoch', resume_epoch - 1))
 
     for epoch in range(resume_epoch, cfg.epoch):
         train_stats = train(net, train_loader, loss_dict, optimizer, scheduler, logger, epoch, train_metric_dict, cfg.use_aux)
@@ -271,15 +307,30 @@ if __name__ == "__main__":
             best_metric_value = monitor_value
             best_epoch = epoch
 
-        save_model(net, optimizer, epoch ,work_dir, distributed)
-
         if is_main_process():
+            ckpt_extra = {
+                'monitor_name': monitor_name,
+                'monitor_value': monitor_value,
+                'best_metric_name': best_metric_name,
+                'best_metric_value': best_metric_value,
+                'best_epoch': best_epoch,
+                'wandb_run_id': wandb_run_id,
+            }
+
+            _save_checkpoint(
+                os.path.join(work_dir, 'ep%03d.pth' % epoch),
+                net,
+                optimizer,
+                epoch,
+                extra=ckpt_extra,
+            )
+
             _save_checkpoint(
                 os.path.join(work_dir, 'latest.pth'),
                 net,
                 optimizer,
                 epoch,
-                extra={'monitor_name': monitor_name, 'monitor_value': monitor_value}
+                extra=ckpt_extra,
             )
 
             if is_best:
@@ -288,11 +339,7 @@ if __name__ == "__main__":
                     net,
                     optimizer,
                     epoch,
-                    extra={
-                        'monitor_name': best_metric_name,
-                        'monitor_value': best_metric_value,
-                        'best_epoch': best_epoch,
-                    }
+                    extra=ckpt_extra,
                 )
 
         dist_print(
