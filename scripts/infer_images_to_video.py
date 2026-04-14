@@ -95,7 +95,19 @@ def parse_args():
     parser.add_argument(
         "--num_lanes", type=int, default=None, help="Override number of lanes"
     )
-    parser.add_argument("--thickness", type=int, default=4, help="Lane point radius")
+    parser.add_argument(
+        "--lane_style",
+        type=str,
+        default="lines",
+        choices=["points", "lines", "both"],
+        help="How to render predictions: points, lines, or both",
+    )
+    parser.add_argument(
+        "--thickness",
+        type=int,
+        default=4,
+        help="Drawing thickness (line thickness / point radius)",
+    )
     return parser.parse_args()
 
 
@@ -164,7 +176,8 @@ def draw_lanes(
     row_anchor,
     cls_num_per_lane,
     griding_num,
-    radius,
+    thickness,
+    lane_style,
     color=(0, 255, 0),
 ):
     h, w = image.shape[:2]
@@ -175,13 +188,32 @@ def draw_lanes(
     for lane_i in range(lane_loc.shape[1]):
         if np.sum(lane_loc[:, lane_i] != 0) <= 2:
             continue
+        lane_points = []
         for row_i in range(lane_loc.shape[0]):
             if lane_loc[row_i, lane_i] <= 0:
                 continue
             x = int(lane_loc[row_i, lane_i] * col_sample_w * w / 800) - 1
             y = int(h * (row_anchor[cls_num_per_lane - 1 - row_i] / 288)) - 1
-            cv2.circle(image, (x, y), radius, color, -1)
-            cv2.circle(pred_mask, (x, y), radius, 255, -1)
+            if x < 0 or x >= w or y < 0 or y >= h:
+                continue
+            lane_points.append((x, y))
+
+        if len(lane_points) <= 2:
+            continue
+
+        if lane_style in ("points", "both"):
+            for x, y in lane_points:
+                cv2.circle(image, (x, y), thickness, color, -1)
+                cv2.circle(pred_mask, (x, y), thickness, 255, -1)
+
+        if lane_style in ("lines", "both"):
+            poly = np.array(lane_points, dtype=np.int32)
+            cv2.polylines(
+                image, [poly], isClosed=False, color=color, thickness=thickness
+            )
+            cv2.polylines(
+                pred_mask, [poly], isClosed=False, color=255, thickness=thickness
+            )
 
     return image, pred_mask
 
@@ -363,6 +395,7 @@ def main():
         print(f"Writing video: {args.output_video}")
     if args.render_style == "comparison":
         print(f"Comparison style enabled (GT mask dir: {gt_mask_dir})")
+    print(f"Lane render style: {args.lane_style}")
 
     try:
         with torch.no_grad():
@@ -384,6 +417,7 @@ def main():
                     cls_num_per_lane,
                     cfg.griding_num,
                     args.thickness,
+                    args.lane_style,
                     color=(255, 255, 0),
                 )
 
