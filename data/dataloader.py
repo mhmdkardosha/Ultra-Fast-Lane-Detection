@@ -27,7 +27,7 @@ def get_train_loader(batch_size, data_root, griding_num, dataset, use_aux, distr
     ])
     if dataset == 'CULane':
         train_dataset = LaneClsDataset(data_root,
-                                           os.path.join(data_root, 'list/train_gt.txt'),
+                                           os.path.join(data_root, 'list/train.txt'),
                                            img_transform=img_transform, target_transform=target_transform,
                                            simu_transform = simu_transform,
                                            segment_transform=segment_transform, 
@@ -63,7 +63,7 @@ def get_test_loader(batch_size, data_root,dataset, distributed):
         transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ])
     if dataset == 'CULane':
-        test_dataset = LaneTestDataset(data_root,os.path.join(data_root, 'list/test.txt'),img_transform = img_transforms)
+        test_dataset = LaneTestDataset(data_root,os.path.join(data_root, 'list/val.txt'),img_transform = img_transforms)
         cls_num_per_lane = 18
     elif dataset == 'Tusimple':
         test_dataset = LaneTestDataset(data_root,os.path.join(data_root, 'test.txt'), img_transform = img_transforms)
